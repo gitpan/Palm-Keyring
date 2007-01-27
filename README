@@ -1,0 +1,29 @@
+Palm::KeyRing - Interface to GNU KeyRing databases
+
+Basic use:
+
+  use Palm::KeyRing;
+
+  # Open the database.
+  my $db = Palm::KeyRing->new("Keys-Gtkr.pdb");
+
+  # Fetch a decoder (verifies the password).
+  my $decoder = $db->getDecoder("Secret PassPhrase");
+  die("Incorrect password") unless $decoder;
+
+  # Fetch record by number (first = 1).
+  my $rec = $db->getRecord(1);
+  # Or fetch record by name.
+  $rec = $db->getRecordByName("BankAccount");
+
+  # Decode record.
+  my ($name, $account, $password, $note) = $decoder->decode($rec);
+
+Build & install as usual.
+
+----------------------------------------------------------------------------
+Johan Vromans                                           jvromans@squirrel.nl
+Squirrel Consultancy                                  Exloo, the Netherlands
+http://www.squirrel.nl                              http://johan.vromans.org
+PGP Key 1024D/1298C2B4                  http://johan.vromans.org/pgpkey.html
+----------------------- "Arms are made for hugging" ------------------------
