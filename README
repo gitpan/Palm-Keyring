@@ -1,6 +1,8 @@
 Palm::KeyRing - Interface to GNU KeyRing databases
 
-Basic use:
+GUI program wxKeyRing requires wxPerl.
+
+API use:
 
   use Palm::KeyRing;
 
@@ -17,7 +19,7 @@ Basic use:
   $rec = $db->getRecordByName("BankAccount");
 
   # Decode record.
-  my ($name, $account, $password, $note) = $decoder->decode($rec);
+  my ($name, $category, $account, $password, $note) = $decoder->decode($rec);
 
 Build & install as usual.
 

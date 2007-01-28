@@ -2,13 +2,14 @@
 
 package Palm::KeyRing;
 
-$VERSION = "0.01";
+$VERSION = "0.90";
 
 use strict;
 use warnings;
 
 use Carp;
-use PDA::Pilot;
+use Palm::PDB;
+use Palm::Raw;
 
 =head1 NAME
 
@@ -29,9 +30,11 @@ Palm::KeyRing - Interface to GNU KeyRing databases
   my $rec = $db->getRecord(1);
   # Or fetch record by name.
   $rec = $db->getRecordByName("BankAccount");
-
+  # $rec->{data} contains the raw data.
+  # $rec->{category} the category index.
+  # $rec->{name} the name.
   # Decode record.
-  my ($name, $account, $password, $note) = $decoder->decode($rec);
+  my ($name, $category, $account, $password, $note) = $decoder->decode($rec);
 
 =head1 DESCRIPTION
 
@@ -53,29 +56,37 @@ Constructor. Takes one argument: the name of the keyring file.
 
 =item getRecords
 
-Loads all the records from the file in an internal cache (if
-necessary), and returns the number of records read. Note that the
-contents will not be decrypted.
+Returns the number of records read. Note that the contents will not be
+decrypted.
 
 =item getNames
 
-Loads all the records from the file in an internal cache (if
-neccessary), and returns a list (in scalar context: array reference)
-of all names used in the keyring file.
+Returns a list (in scalar context: array reference) of all names used
+in the keyring file.
 
 =item getRecord
 
-Takes one integer argument, a record number, and returns the record
-data. The first data record is numbered 1.
+Takes one integer argument, a record number, and returns the record.
+This is a hash ref with at least keys "name, "data" and "category".
+Note that "category" is the category index.
 
 If no such record exists, returns undef.
 
 =item getRecordByName
 
 Takes one argument, a record name, and returns the corresponding
-record.
+record. See getRecord above for the return values.
 
 If no such record exists, returns undef.
+
+=item getCategory
+
+Takes one argument, a category index. Returns the category as a string.
+
+=item getCategories
+
+In list context, returns a list of categories. In scalar context
+returns an array reference.
 
 =item getDecoder
 
@@ -83,9 +94,9 @@ Takes one argument, the keyring password. If the password is correct,
 it returns a decoder for this keyring. Otherwise, it returns undef.
 
 The decoder provides one method: decode. This method takes one
-argument, the record data. It returns a list (in scalar context: array
-reference) of the record name, account, password and note, all
-decrypted.
+argument, the record (as a hash ref). It returns a list (in scalar
+context: array reference) of the record name, category_name, account,
+password and note, all decrypted.
 
 =head1 REQUIREMENTS
 
@@ -100,11 +111,16 @@ program requires WxPerl 0.15 or later.
 
 =head1 BUGS
 
-Currently does not handle categories.
+Installs Palm::Raw as the default handler for Palm::PDB. This could
+have side effects if the rest of the program also uses Palm::PDB.
 
 =head1 AUTHOR
 
 Johan Vromans E<lt>jv@cpan.orgE<gt>.
+
+=head1 LICENCE
+
+Artistic or GPL, whichever you prefer.
 
 =cut
 
@@ -114,54 +130,84 @@ sub new {
     my $self = {};
 
     croak("$file: $!\n") unless -f $file && -r $file;
-    $self->{db} = PDA::Pilot::File::open($file);
-    $self->{rec0} = $self->{db}->getRecord(0)->{raw};
-    $self->{cacheptr} = 1;
-    $self->{eof} = 0;
+    $self->{db} = Palm::PDB->new;
+    $self->{db}->Load($file);
     $self->{filename} = $file;
+
+    # Load the records.
+    my $recno = 0;
+    foreach ( @{$self->{db}->{records}} ) {
+	if ( $recno == 0 ) {
+	    $recno++;
+	    next;
+	}
+	my $r = $_->{data};
+	$r =~ /^(.+?)\000/s;
+	my $name = $1;
+	$self->{recs}->{$name} = [$recno, $_->{category}];
+	$recno++;
+    }
+
+    # Load the categories.
+    $self->{categories} =
+      [ unpack("xx".("A16"x16), $self->{db}->{appinfo}) ];
+
+    # Return the object.
     bless($self, $pkg);
 }
 
 sub getDecoder {
     my ($self, $passwd) = @_;
-    Palm::KeyRing::Decoder->_new($self->{rec0}, $passwd);
+    Palm::KeyRing::Decoder->_new
+	($self, $self->{db}->{records}->[0]->{data}, $passwd);
 }
 
 sub getRecord {
     my ($self, $recno) = @_;
-    my $r = $self->{db}->getRecord($recno);
-    if ( defined $r ) {
-	$r = $r->{raw};
-	$r =~ /^(.+?)\000/s;
-	my $name = $1;
-	$self->{recs}->{$name} = $r if defined($name);
-	# warn("Record: $recno => \"$name\"\n");
-    }
-    $r;
+    return undef if $recno >= scalar(@{$self->{db}->{records}});
+    $self->{db}->{records}->[$recno];
 }
 
 sub getRecordByName {
     my ($self, $name) = @_;
-    return $self->{recs}->{$name} if exists $self->{recs}->{$name};
-    return undef if $self->{eof};
-    while ( defined($self->getRecord($self->{cacheptr}++)) ) {
-	return $self->{recs}->{$name} if exists $self->{recs}->{$name};
-    }
-    $self->{eof} = 1;
-    undef;
+    return undef unless exists $self->{recs}->{$name};
+    $self->getRecord($self->{recs}->{$name}->[0]);
 }
 
 sub getRecords {
     my ($self) = @_;
-    scalar(@{$self->getNames});
+    scalar(@{$self->{db}->{records}})-1;
 }
 
 sub getNames {
     my ($self) = @_;
-    while ( !$self->{eof}
-	    && defined($self->getRecord($self->{cacheptr}++)) ) { }
     my @names = keys(%{$self->{recs}});
     wantarray ? @names : \@names;
+}
+
+sub getCategory {
+    my ($self, $cat) = @_;
+    return undef unless $self->{categories}->[$cat];
+    return $self->{categories}->[$cat];
+}
+
+sub getCategoryByName {
+    my ($self, $name) = @_;
+
+    unless ( exists($self->{catmap}) ) {
+	# Build reverse mapping.
+	for ( my $i = 0; $i < 15; $i++ ) {
+	    next unless $self->{categories}->[$i];
+	    $self->{catmap}->{$self->{categories}->[$i]} = $i;
+	}
+    }
+
+    $self->{catmap}->{$name};
+}
+
+sub getCategories {
+    my ($self) = @_;
+    wantarray ? @{$self->{categories}} : $self->{categories};
 }
 
 package Palm::KeyRing::Decoder;
@@ -170,7 +216,7 @@ use Crypt::DES;
 use Digest::MD5 qw(md5);
 
 sub _new {
-    my ($pkg, $keyring0, $passwd) = @_;
+    my ($pkg, $super, $keyring0, $passwd) = @_;
     $pkg = ref($pkg) || $pkg;
 
     my $key = md5($passwd);
@@ -181,26 +227,30 @@ sub _new {
     $msg = substr($msg,0,64);	# cut to 64 bytes
     my $digest = md5($msg);
     if ( substr($keyring0,4,length($digest)) eq $digest ) {
-	return bless([$c1, $c2], $pkg);
+	return bless([$super, $c1, $c2], $pkg);
     }
     undef;
 }
 
 sub decode {
-    my ($self, $data) = @_;
+    my ($self, $rec) = @_;
 
+    croak("decode requires a hash ref as argument")
+      unless UNIVERSAL::isa($rec, 'HASH');
+    my $data = $rec->{data};
+    my $cat = $self->[0]->getCategory($rec->{category});
     my ($name, $raw) = split(/\000/, $data, 2);
     my $out = "";
     for ( my $j=0; $j<int(length($raw) / 8); $j++) {
-	my $to = $self->[0]->decrypt( substr($raw,$j*8,8) );
-	my $other = $self->[1]->encrypt($to);
-	$to = $self->[0]->decrypt($other);
+	my $to = $self->[1]->decrypt( substr($raw,$j*8,8) );
+	my $other = $self->[2]->encrypt($to);
+	$to = $self->[1]->decrypt($other);
 	$out .= $to;
     }
     my ($acc,$pass,$note,undef) = split(/\000/,$out,4);
     $note =~ s/\n+$// if $note;
 
-    wantarray ? ($name,$acc,$pass,$note) : [$name,$acc,$pass,$note];
+    wantarray ? ($name,$cat,$acc,$pass,$note) : [$name,$cat,$acc,$pass,$note];
 }
 
 # Self-test. This requires the Keys-Gtkr.pdb that is in the tests
@@ -223,9 +273,10 @@ unless ( caller ) {
     $rec = $db->getRecordByName("Paypal");
 
     # Decode record.
-    my ($name, $account, $password, $note) = $decoder->decode($rec);
+    my ($name, $cat, $account, $password, $note) = $decoder->decode($rec);
 
     print("Name:     $name\n",
+	  "Category: $cat\n",
 	  "Account:  $account\n",
 	  "Password: $password\n",
 	  "Note:     $note\n");

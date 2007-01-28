@@ -18,5 +18,5 @@ my $d = $k->getDecoder("secret");
 ok($d, "Decoder / Password check");
 
 my @a = $d->decode($k->getRecordByName("Paypal"));
-is(join("|",@a), "Paypal|friend|vy7rouaD|", "Record \"Paypal\"");
+is(join("|",@a), "Paypal|Web|friend|vy7rouaD|", "Record \"Paypal\"");
 

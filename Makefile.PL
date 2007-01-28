@@ -26,7 +26,8 @@ my %ctl = (
     VERSION_FROM	=> 'lib/Palm/KeyRing.pm',
     EXE_FILES           => [ map { "script/$_" } @scripts ],
     PREREQ_PM		=> {
-	'PDA::Pilot' => 0,
+	'Palm::PDB' => 0,
+	'Palm::Raw' => 0,
         'Crypt::DES' => 0,
     },
 );

@@ -1,0 +1,9 @@
+0.90
+
+	Updated release, using Palm::PDB. Now supports categories.
+
+	WARNING: Incompatible API change.
+
+0.01	Jan 27 2007 19:16
+
+	First release, using PDA::Pilot.

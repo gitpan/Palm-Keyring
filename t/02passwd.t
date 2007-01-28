@@ -8,7 +8,7 @@ use Test::More tests => 3;
 chdir("t") if -d "t";
 
 BEGIN {
-    use_ok("Palm::KeyRing");
+    use_ok("Palm::KeyRing", 0.90);
 }
 
 my $k = Palm::KeyRing->new("Keys-Gtkr.pdb");

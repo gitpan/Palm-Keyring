@@ -18,4 +18,4 @@ my $d = $k->getDecoder("secret");
 ok($d, "Decoder / Password check");
 
 my @a = $d->decode($k->getRecord(2));
-is(join("|",@a), "MyComputer|root|M15mz1Za|", "Record 2");
+is(join("|",@a), "MyComputer|Computer|root|M15mz1Za|", "Record 2");
