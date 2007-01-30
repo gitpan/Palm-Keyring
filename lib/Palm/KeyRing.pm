@@ -2,7 +2,7 @@
 
 package Palm::KeyRing;
 
-$VERSION = "0.90";
+$VERSION = "0.91";
 
 use strict;
 use warnings;
@@ -22,27 +22,34 @@ Palm::KeyRing - Interface to GNU KeyRing databases
   # Open the database.
   my $db = Palm::KeyRing->new("Keys-Gtkr.pdb");
 
-  # Fetch a decoder (verifies the password).
-  my $decoder = $db->getDecoder("Secret PassPhrase");
-  die("Incorrect password") unless $decoder;
+  # Fetch a decryptor (verifies the password).
+  my $decryptor = $db->getDecryptor("Secret PassPhrase");
+  die("Incorrect password") unless $decryptor;
 
   # Fetch record by number (first = 1).
   my $rec = $db->getRecord(1);
   # Or fetch record by name.
-  $rec = $db->getRecordByName("BankAccount");
-  # $rec->{data} contains the raw data.
-  # $rec->{category} the category index.
+  # Note that there can be several records with the same name.
+  $rec = $db->getRecordsByName("BankAccount")->[0];
   # $rec->{name} the name.
-  # Decode record.
-  my ($name, $category, $account, $password, $note) = $decoder->decode($rec);
+  # $rec->{category} the category index.
+  # $rec->{data} contains the encrypteddata.
+
+  # Decrypt record.
+  my ($name, $category, $account, $password, $note, $lastmod) =
+    $decryptor->decrypt($rec);
 
 =head1 DESCRIPTION
 
 Palm::KeyRing provides a (currently read-only) interface to the
 keyring files as used by the GNU KeyRing tool on Palm handhelds.
 
-Records in the keyring file have 4 fields: name, account, password,
-and note. All fields except name are encrypted.
+Records in the keyring file have 5 fields: name, account, password,
+note, and lastmod. All fields except name are encrypted.
+
+The lastmod field, if present, will be returned by the decryptor as an
+array reference [ year, month, day ], compatible with the first three
+elements returned by localtime.
 
 =head1 METHODS
 
@@ -72,12 +79,17 @@ Note that "category" is the category index.
 
 If no such record exists, returns undef.
 
-=item getRecordByName
+=item getRecordsByName
 
-Takes one argument, a record name, and returns the corresponding
-record. See getRecord above for the return values.
+Takes two arguments, a record name, and a category mask. Returns an
+list (or arry ref in scalar context) of the corresponding records. See
+getRecord above for the return values.
 
-If no such record exists, returns undef.
+If no such record exists, returns an empty list (or reference).
+
+The category mask is a bit pattern, where bit 0 = category 0
+(Unfiled), bit 1 = category 1, and so on. When the category mask is
+omitted, returns the results for all categories.
 
 =item getCategory
 
@@ -88,15 +100,15 @@ Takes one argument, a category index. Returns the category as a string.
 In list context, returns a list of categories. In scalar context
 returns an array reference.
 
-=item getDecoder
+=item getDecryptor
 
 Takes one argument, the keyring password. If the password is correct,
-it returns a decoder for this keyring. Otherwise, it returns undef.
+it returns a decryptor for this keyring. Otherwise, it returns undef.
 
-The decoder provides one method: decode. This method takes one
+The decryptor provides one method: decrypt. This method takes one
 argument, the record (as a hash ref). It returns a list (in scalar
 context: array reference) of the record name, category_name, account,
-password and note, all decrypted.
+password, note, and lastmod; all decrypted.
 
 =head1 REQUIREMENTS
 
@@ -109,18 +121,30 @@ Crypt::DES
 Palm::KeyRing comes with a nice GUI based demo program wxkeyring. This
 program requires WxPerl 0.15 or later.
 
-=head1 BUGS
+=head1 BUGS AND LIMITATIONS
 
 Installs Palm::Raw as the default handler for Palm::PDB. This could
 have side effects if the rest of the program also uses Palm::PDB.
+
+Please report any bugs or feature requests to bug-palm-keyring at
+rt.cpan.org, or through the web interface at http://rt.cpan.org.
+
+=head1 SEE ALSO
+
+Palm::PDB
+
+The Keyring for Palm OS website: http://gnukeyring.sourceforge.net
 
 =head1 AUTHOR
 
 Johan Vromans E<lt>jv@cpan.orgE<gt>.
 
-=head1 LICENCE
+=head1 LICENCE AND COPYRIGHT
 
-Artistic or GPL, whichever you prefer.
+Copyright 2007 Johan Vromans, All Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify
+it under the same terms as Perl itself.
 
 =cut
 
@@ -144,7 +168,8 @@ sub new {
 	my $r = $_->{data};
 	$r =~ /^(.+?)\000/s;
 	my $name = $1;
-	$self->{recs}->{$name} = [$recno, $_->{category}];
+	push(@{$self->{recs}->{$name}}, $recno, $_->{category});
+	push(@{$self->{names}}, $name);
 	$recno++;
     }
 
@@ -156,9 +181,9 @@ sub new {
     bless($self, $pkg);
 }
 
-sub getDecoder {
+sub getDecryptor {
     my ($self, $passwd) = @_;
-    Palm::KeyRing::Decoder->_new
+    Palm::KeyRing::Decryptor->_new
 	($self, $self->{db}->{records}->[0]->{data}, $passwd);
 }
 
@@ -168,10 +193,20 @@ sub getRecord {
     $self->{db}->{records}->[$recno];
 }
 
-sub getRecordByName {
-    my ($self, $name) = @_;
-    return undef unless exists $self->{recs}->{$name};
-    $self->getRecord($self->{recs}->{$name}->[0]);
+sub getRecordsByName {
+    my ($self, $name, $catmask) = @_;
+    $catmask = ~0 unless defined $catmask;
+    my @ret = ();
+    if ( exists $self->{recs}->{$name} ) {
+	my @a = @{$self->{recs}->{$name}};
+	while ( @a ) {
+	    my $rnr = shift(@a);
+	    my $cat = shift(@a);
+	    next unless $catmask & (1 << $cat);
+	    push(@ret, $self->getRecord($rnr));
+	}
+    }
+    wantarray ? @ret : \@ret;
 }
 
 sub getRecords {
@@ -181,7 +216,7 @@ sub getRecords {
 
 sub getNames {
     my ($self) = @_;
-    my @names = keys(%{$self->{recs}});
+    my @names = @{$self->{names}};
     wantarray ? @names : \@names;
 }
 
@@ -210,32 +245,32 @@ sub getCategories {
     wantarray ? @{$self->{categories}} : $self->{categories};
 }
 
-package Palm::KeyRing::Decoder;
+package Palm::KeyRing::Decryptor;
 
 use Crypt::DES;
 use Digest::MD5 qw(md5);
+use Carp;
 
 sub _new {
     my ($pkg, $super, $keyring0, $passwd) = @_;
     $pkg = ref($pkg) || $pkg;
 
-    my $key = md5($passwd);
-    my $c1 = new Crypt::DES substr($key,0,8);
-    my $c2 = new Crypt::DES substr($key,8,8);
-
     my $msg = substr($keyring0,0,4).$passwd."\000" x 64;
     $msg = substr($msg,0,64);	# cut to 64 bytes
     my $digest = md5($msg);
     if ( substr($keyring0,4,length($digest)) eq $digest ) {
-	return bless([$super, $c1, $c2], $pkg);
+	my $key = md5($passwd);
+	return bless([$super,
+		      Crypt::DES->new(substr($key,0,8)),
+		      Crypt::DES->new(substr($key,8,8))], $pkg);
     }
     undef;
 }
 
-sub decode {
+sub decrypt {
     my ($self, $rec) = @_;
 
-    croak("decode requires a hash ref as argument")
+    croak("decrypt requires a hash ref as argument")
       unless UNIVERSAL::isa($rec, 'HASH');
     my $data = $rec->{data};
     my $cat = $self->[0]->getCategory($rec->{category});
@@ -247,10 +282,21 @@ sub decode {
 	$to = $self->[1]->decrypt($other);
 	$out .= $to;
     }
-    my ($acc,$pass,$note,undef) = split(/\000/,$out,4);
+    my ($acc,$pass,$note,$x) = split(/\000/,$out,4);
     $note =~ s/\n+$// if $note;
 
-    wantarray ? ($name,$cat,$acc,$pass,$note) : [$name,$cat,$acc,$pass,$note];
+    if ( $x && (my $packed_date = unpack("n", $x)) ) {
+	my @tm = ((($packed_date & 0xFE00) >> 9) + 4,
+		  (($packed_date & 0x01E0) >> 5) - 1,
+		  ($packed_date & 0x001F),
+		  0, 0, 0);
+	$x = \@tm;
+    }
+    else {
+	undef $x;
+    }
+
+    wantarray ? ($name,$cat,$acc,$pass,$note,$x) : [$name,$cat,$acc,$pass,$note,$x];
 }
 
 # Self-test. This requires the Keys-Gtkr.pdb that is in the tests
@@ -264,22 +310,31 @@ unless ( caller ) {
     warn("Number of records = ", $db->getRecords, "\n");
 
     # Verify the password.
-    my $decoder = $db->getDecoder("secret");
-    die("Incorrect password") unless $decoder;
+    my $decryptor = $db->getDecryptor("secret");
+    die("Incorrect password") unless $decryptor;
 
     # Fetch first record:
     my $rec = $db->getRecord(1);
     # Or fetch a record by its name:
-    $rec = $db->getRecordByName("Paypal");
+    $rec = $db->getRecordsByName("Bank",
+				 1 << $db->getCategoryByName("Banking")
+				)->[0];
 
-    # Decode record.
-    my ($name, $cat, $account, $password, $note) = $decoder->decode($rec);
+    # Decrypt record.
+    my ($name, $cat, $account, $password, $note, $x) =
+      $decryptor->decode($rec);
 
     print("Name:     $name\n",
 	  "Category: $cat\n",
 	  "Account:  $account\n",
 	  "Password: $password\n",
-	  "Note:     $note\n");
+	  "Note:     $note\n",
+	  "Modified: ", $x ? sprintf("%d-%02d-%02d",
+				     1900 + $x->[0],
+				     1 + $x->[1],
+				     $x->[2]) : "", "\n",
+	 );
+
 
 }
 

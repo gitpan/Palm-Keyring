@@ -14,5 +14,5 @@ BEGIN {
 my $k = Palm::KeyRing->new("Keys-Gtkr.pdb");
 ok($k, "New Palm::KeyRing");
 
-my $d = $k->getDecoder("secret");
-ok($d, "Decoder / Password check");
+my $d = $k->getDecryptor("secret");
+ok($d, "Decryptor / Password check");

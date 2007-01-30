@@ -14,8 +14,9 @@ BEGIN {
 my $k = Palm::KeyRing->new("Keys-Gtkr.pdb");
 ok($k, "New Palm::KeyRing");
 
-my $d = $k->getDecoder("secret");
-ok($d, "Decoder / Password check");
+my $d = $k->getDecryptor("secret");
+ok($d, "Decryptor / Password check");
 
-my @a = $d->decode($k->getRecord(2));
+my @a = $d->decrypt($k->getRecord(3));
+pop(@a);
 is(join("|",@a), "MyComputer|Computer|root|M15mz1Za|", "Record 2");

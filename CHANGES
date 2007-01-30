@@ -1,4 +1,13 @@
-0.90
+0.91
+
+	Updated release, now supports multiple records with the same
+	name.
+
+	Added support for the "lasst modified" info.
+
+	WARNING: Incompatible API change.
+
+0.90	Jan 28 2007, 21:46
 
 	Updated release, using Palm::PDB. Now supports categories.
 
