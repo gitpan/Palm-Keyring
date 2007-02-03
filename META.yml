@@ -1,13 +1,22 @@
-# http://module-build.sourceforge.net/META-spec.html
-#XXXXXXX This is a prototype!!!  It will change in the future!!! XXXXX#
-name:         Palm-KeyRing
-version:      0.92
-version_from: lib/Palm/KeyRing.pm
-installdirs:  site
+---
+name: Palm-Keyring
+version: 0.93
+author:
+  - 'Andrew Fresh E<lt>andrew@mad-techies.orgE<gt>'
+abstract: Handler for Palm Keyring databases.
+license: perl
+resources:
+  license: http://dev.perl.org/licenses/
 requires:
-    Crypt::DES:                    0
-    Palm::PDB:                     0
-    Palm::Raw:                     0
-
-distribution_type: module
-generated_by: ExtUtils::MakeMaker version 6.30
+  Crypt::DES: 0
+  Digest::MD5: 0
+  Palm::StdAppInfo: 0
+  perl: 5.6.1
+provides:
+  Palm::Keyring:
+    file: lib/Palm/Keyring.pm
+    version: 0.93
+generated_by: Module::Build version 0.2806
+meta-spec:
+  url: http://module-build.sourceforge.net/META-spec-v1.2.html
+  version: 1.2

@@ -1,31 +1,147 @@
-Palm::KeyRing - Interface to GNU KeyRing databases
+NAME
+    Palm::Keyring - Handler for Palm Keyring databases.
 
-GUI program wxKeyRing requires wxPerl.
+DESCRIPTION
+    The Keyring PDB handler is a helper class for the Palm::PDB package. It
+    parses Keyring for Palm OS databases. See
+    <http://gnukeyring.sourceforge.net/>.
 
-API use:
+    It has the standard Palm::PDB methods with 2 additional public methods.
+    Decrypt and Encrypt.
 
-  use Palm::KeyRing;
+    It currently supports the v4 Keyring databases. The v5 databases from
+    the pre-release keyring-2.0 are not supported.
 
-  # Open the database.
-  my $db = Palm::KeyRing->new("Keys-Gtkr.pdb");
+    This module doesn't store the decrypted content. It only keeps it until
+    it returns it to you or encrypts it.
 
-  # Fetch a decoder (verifies the password).
-  my $decoder = $db->getDecoder("Secret PassPhrase");
-  die("Incorrect password") unless $decoder;
+SYNOPSIS
+        use Palm::PDB;
+        use Palm::Keyring;
+    
+        my $pass = 'password';
+        my $file = 'Keys-Gtkr.pdb';
+        my $pdb  = new Palm::PDB;
+        $pdb->Load($file);
+    
+        foreach (0..$#{ $pdb->{'records'} }) {
+            next if $_ = 0; # skip the password record
+            my $rec  = $pdb->{'records'}->[$_];
+            my $acct = $pdb->Decrypt($rec, $pass);
+            print $rec->{'name'}, ' - ', $acct->{'account'}, "\n";
+        }
 
-  # Fetch record by number (first = 1).
-  my $rec = $db->getRecord(1);
-  # Or fetch record by name.
-  $rec = $db->getRecordByName("BankAccount");
+SUBROUTINES/METHODS
+  new
+        $pdb = new Palm::Keyring([$password]);
 
-  # Decode record.
-  my ($name, $category, $account, $password, $note) = $decoder->decode($rec);
+    Create a new PDB, initialized with the various Palm::Keyring fields and
+    an empty record list.
 
-Build & install as usual.
+    Use this method if you're creating a Keyring PDB from scratch otherwise
+    you can just use Palm::PDB::new() before calling Load().
 
-----------------------------------------------------------------------------
-Johan Vromans                                           jvromans@squirrel.nl
-Squirrel Consultancy                                  Exloo, the Netherlands
-http://www.squirrel.nl                              http://johan.vromans.org
-PGP Key 1024D/1298C2B4                  http://johan.vromans.org/pgpkey.html
------------------------ "Arms are made for hugging" ------------------------
+    If you pass in a password, it will initalize the first record with the
+    encrypted password.
+
+  Encrypt
+        $pdb->Encrypt($rec, $acct[, $password]);
+
+    Encrypts an account into a record, either with the password previously
+    used, or with a password that is passed.
+
+    $rec is a record from $pdb->{'records'} or a new_Record(). $acct is a
+    hashref in the format below.
+
+        my $acct = {
+            name       => $rec->{'name'},
+            account    => $account,
+            password   => $password,
+            notes      => $notes,
+            lastchange => {
+                year  => 107, # years since 1900
+                month =>   0, # 0-11, 0 = January, 11 = December
+                day   =>  30, # 1-31, same as localtime
+            },
+        };
+
+    If you have changed anything other than the lastchange, or don't pass in
+    a lastchange key, Encrypt() will generate a new lastchange date for you.
+
+    If you pass in a lastchange field that is different than the one in the
+    record, it will honor what you passed in.
+
+    Encrypt() only uses the $acct->{'name'} if there is not already a
+    $rec->{'name'}.
+
+  Decrypt
+        my $acct = $pdb->Decrypt($rec[, $password]);
+
+    Decrypts the record and returns a hashref for the account as described
+    under Encrypt().
+
+        foreach (0..$#{ $pdb->{'records'}) {
+            next if $_ == 0;
+            my $rec = $pdb->{'records'}->[$_];
+            my $acct = $pdb->Decrypt($rec[, $password]);
+            # do something with $acct
+        }
+
+  Password
+        $pdb->Password([$password[, $new_password]]);
+
+    Either sets the password to be used to crypt, or if you pass
+    $new_password, changes the password on the database.
+
+    If you have created a new $pdb, and you didn't set a password when you
+    called new(), you only need to pass one password and it will set that as
+    the password.
+
+    If nothing is passed, it forgets the password that it was remembering.
+
+DEPENDENCIES
+    Palm::StdAppInfo
+
+    Digest::MD5
+
+    Crypt::DES
+
+    Readonly
+
+THANKS
+    I would like to thank the helpful Perlmonk shigetsu who gave me some
+    great advice and helped me get my first module posted.
+    <http://perlmonks.org/?node_id=596998>
+
+    I would also like to thank Johan Vromans <jvromans@squirrel.nl> --
+    <http://www.squirrel.nl/people/jvromans>. He had his own Palm::KeyRing
+    module that he posted a couple of days before mine was ready and he was
+    kind enough to let me have the namespace as well as giving me some very
+    helpful hints about doing a few things that I was unsure of. He is
+    really great.
+
+BUGS AND LIMITATIONS
+    Please report any bugs or feature requests to "bug-palm-keyring at
+    rt.cpan.org", or through the web interface at <http://rt.cpan.org>. I
+    will be notified, and then you'll automatically be notified of progress
+    on your bug as I make changes.
+
+AUTHOR
+    Andrew Fresh <andrew@mad-techies.org>
+
+LICENSE AND COPYRIGHT
+    Copyright 2004, 2005, 2006, 2007 Andrew Fresh, All Rights Reserved.
+
+    This program is free software; you can redistribute it and/or modify it
+    under the same terms as Perl itself.
+
+SEE ALSO
+    Palm::PDB(3)
+
+    Palm::StdAppInfo(3)
+
+    The Keyring for Palm OS website: <http://gnukeyring.sourceforge.net/>
+
+    Johan Vromans also has a wxkeyring app that now uses this module,
+    available from his website at <http://www.vromans.org/johan/software/>
+

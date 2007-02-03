@@ -1,0 +1,12 @@
+Better error reporting.  Learn how the rest of the modules do it, then support that.
+
+make example4 actually a gui keyring app
+
+Support the v5 or newer databases
+
+validate dates passed into the lastchange field.
+
+should I generate a new date ONLY if the password changes
+or if anything changes?
+
+$RedRiver: TODO,v 1.6 2007/02/01 01:56:11 andrew Exp $

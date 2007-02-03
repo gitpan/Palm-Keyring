@@ -1,15 +1,13 @@
-README
-CHANGES
-lib/Palm/KeyRing.pm
-Makefile.PL
+Build.PL
+Changes
+lib/Palm/Keyring.pm
 MANIFEST			This list of files
-script/wxkeyring
-t/01basic.t
-t/02passwd.t
-t/03recnam.t
-t/04recnum.t
-t/05mix.t
-t/06cats.t
-t/Keys-Gtkr.pdb
-wxkeyring.wxg
-META.yml                                 Module meta-data (added by MakeMaker)
+scripts/example1.pl
+scripts/example2.pl
+scripts/example3.pl
+scripts/KeyRingpdbdump
+t/keyring.t
+TODO
+Makefile.PL
+README
+META.yml
