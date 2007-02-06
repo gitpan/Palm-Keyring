@@ -1,6 +1,6 @@
 ---
 name: Palm-Keyring
-version: 0.93
+version: 0.94
 author:
   - 'Andrew Fresh E<lt>andrew@mad-techies.orgE<gt>'
 abstract: Handler for Palm Keyring databases.
@@ -15,7 +15,7 @@ requires:
 provides:
   Palm::Keyring:
     file: lib/Palm/Keyring.pm
-    version: 0.93
+    version: 0.94
 generated_by: Module::Build version 0.2806
 meta-spec:
   url: http://module-build.sourceforge.net/META-spec-v1.2.html

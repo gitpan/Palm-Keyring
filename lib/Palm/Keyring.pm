@@ -23,7 +23,7 @@ my $EMPTY      = q{};
 my $SPACE      = q{ };
 my $NULL       = chr 0;
 
-our $VERSION = 0.93;
+our $VERSION = 0.94;
 
 sub new {
     my $classname = shift;
