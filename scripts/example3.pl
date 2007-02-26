@@ -1,6 +1,18 @@
 #!/usr/bin/perl
+# $RedRiver: example3.pl,v 1.4 2007/02/10 16:24:16 andrew Exp $
+########################################################################
+# palmkeyring.pl *** a command line client for Keyring databases.
+#
+# 2007.02.10 #*#*# andrew fresh <andrew@cpan.org>
+########################################################################
+# Copyright (C) 2007 by Andrew Fresh
+#
+# This program is free software; you can redistribute it and/or modify
+# it under the same terms as Perl itself.
+########################################################################
 use strict;
 use warnings;
+
 use Getopt::Long;
 Getopt::Long::Configure('bundling');
 use Term::ReadLine;

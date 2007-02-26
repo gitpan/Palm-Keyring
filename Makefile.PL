@@ -8,8 +8,6 @@ WriteMakefile
           'EXE_FILES' => [],
           'VERSION_FROM' => 'lib/Palm/Keyring.pm',
           'PREREQ_PM' => {
-                           'Crypt::DES' => '0',
-                           'Digest::MD5' => '0',
                            'Palm::StdAppInfo' => '0'
                          }
         )

@@ -1,5 +1,5 @@
 #!/usr/bin/perl
-# $RedRiver: Build.PL,v 1.6 2007/02/03 00:54:01 andrew Exp $
+# $RedRiver: Build.PL,v 1.7 2007/02/21 05:25:33 andrew Exp $
 ########################################################################
 # Build.PL *** the Build.pl for Palm::Keyring
 # 
@@ -12,12 +12,18 @@ use Module::Build;
 my $build = Module::Build->new
 (
 	module_name => 'Palm::Keyring',
+    dist_abstract => 'Handler for Palm Keyring databases.',
 	license  => 'perl',
 	requires => {
 		'perl'             => '5.6.1',
 		'Palm::StdAppInfo' => '0',
-		'Digest::MD5'      => '0',
-		'Crypt::DES'       => '0',
+    },
+    recommends => {
+		'Digest::MD5'       => '0',
+		'Crypt::DES'        => '0',
+        'Crypt::CBC'        => '0',
+        'Digest::HMAC_SHA1' => '0',
+        'Digest::SHA1'      => '0',
 	},
 	create_makefile_pl => 'traditional',
 	create_readme => 1,

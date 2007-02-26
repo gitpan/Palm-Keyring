@@ -1,213 +1,134 @@
-# Before `make install' is performed this script should be runnable with
-# `make test'. After `make install' it should work as `perl test.pl'
+#!/usr/bin/perl -T
+# $RedRiver: keyring.t,v 1.12 2007/02/23 22:05:17 andrew Exp $
+use strict;
+use warnings;
 
-######################### We start with some black magic to print on failure.
+use Test::More tests => 44;
+use YAML;
 
-# Change 1..1 below to 1..last_test_to_print .
-# (It may become useful if the test is moved to ./t subdirectory.)
+BEGIN { 
+    use_ok( 'Palm::PDB' ); 
+    use_ok( 'Palm::Keyring' ); 
+}
 
-my $test = 1;
-BEGIN { $| = 1; print "1..20\n"; }
-END {print "not ok $test\n" unless $loaded;}
-use Palm::PDB;
-use Palm::Keyring;
-$loaded = 1;
-print "ok $test\n";
-$test++;
-
-######################### End of black magic.
-
-# Insert your test code below (better if it prints "ok 13"
-# (correspondingly "not ok 13") depending on the success of chunk 13
-# of the test code):
-
-my $file = 'Keys-GTKR-test.pdb';
+my $file = 'Keys-test.pdb';
 my $password = '12345';
 my $new_password = '54321';
-my $acct = {
-    name        => 'test3',
-	account     => 'atestaccount',
-	password    => $password,
-	notes       => 'now that really roxorZ!',
-    lastchange  => {
-        day   =>  2,
-        month =>  2,
-        year  => 99,
+
+my @o = (
+    {
+        version  => 4,
+        password => $password,
     },
-};
+    {
+        version      => 5,
+        password     => $password,
+        cipher       => 1,
+        v4compatible => 1,
+    },
+);
 
-my $pdb;
-my $record;
+foreach my $options (@o) {
+    my $pdb;
+    my $record;
+    my $decrypted;
 
-eval { $pdb = new Palm::Keyring($password) };
-unless( $@ ) {
-	print "ok $test\n";
-} else {
-	print "not ok $test\n";
+    my $acct = {
+        name        => 'test3',
+        account     => 'atestaccount',
+        password    => $password,
+        notes       => 'now that really roxorZ!',
+        lastchange  => {
+            day   =>  2,
+            month =>  2,
+            year  => 99,
+        },
+    };
+
+    SKIP: {
+        if (defined $options->{cipher} && $options->{cipher} > 0) {
+            my $crypt = Palm::Keyring::crypts($options->{cipher});
+            skip 'Crypt::CBC not installed', 21 unless 
+                eval "require Crypt::CBC";
+            skip 'Crypt::' . $crypt->{name} . ' not installed', 21 unless 
+                eval "require Crypt::$crypt->{name}";
+        }
+
+        if ($options->{version} == 4) {
+            skip 'Crypt::DES not installed', 21 unless 
+                eval " require Crypt::DES ";
+            skip 'Digest::MD5 not installed', 21 unless 
+                eval " require Digest::MD5 ";
+        } elsif ($options->{version} == 5) {
+            skip 'Digest::HMAC_SHA1 not installed', 21 unless 
+                eval " require Digest::HMAC_SHA1 ";
+        }
+
+        ok( $pdb = new Palm::Keyring($options), 
+            'New Palm::Keyring v' . $options->{version} );
+
+        ok( $record = $pdb->append_Record(), 'Append Record' );
+
+        ok( $pdb->Encrypt($record, $acct, $password), 'Encrypt account into record' );
+
+        ok( $pdb->Write($file), 'Write file' );
+
+        $pdb = undef;
+
+
+        my $rec_num = 1;
+        if ($options->{version} == 4) {
+            ok( $pdb = new Palm::PDB(), 'New Palm::PDB' );
+        } else {
+            ok( $pdb = new Palm::Keyring(-v4compatible => 1), 'New Palm::Keyring' );
+            $rec_num = 0;
+        }
+
+        ok( $pdb->Load($file), 'Load File' );
+
+        ok( $pdb->Password($password), 'Verify Password' );
+
+        ok( $decrypted = $pdb->Decrypt($pdb->{records}->[$rec_num]), 'Decrypt record' );
+
+        is( $decrypted->{password}, $password, 'Got password' );
+
+        is_deeply( $decrypted, $acct, 'Account Matches' );
+
+        my $old_date = $decrypted->{'lastchange'};
+
+        ok( $pdb->Password($password, $new_password), 'Change PDB Password' );
+
+        ok( $decrypted = $pdb->Decrypt($pdb->{'records'}->[$rec_num]), 'Decrypt with new password' );
+
+        my $new_date = $decrypted->{'lastchange'};
+
+        is_deeply( $old_date, $new_date, 'Date didn\'t change' );
+
+        $acct->{'password'} = $new_password;
+
+        ok(  $pdb->Encrypt($pdb->{'records'}->[$rec_num], $acct), 'Change record' );
+
+        ok( $decrypted = $pdb->Decrypt($pdb->{'records'}->[$rec_num]), 'Decrypt new record' );
+
+        $new_date = $decrypted->{'lastchange'};
+
+        my $od = join '/', map { $old_date->{$_} } sort keys %{ $old_date };
+        my $nd = join '/', map { $new_date->{$_} } sort keys %{ $new_date };
+
+        isnt( $od, $nd, 'Date changed');
+
+        is( $decrypted->{password}, $new_password, 'Got new password' ); 
+
+        $decrypted = {};
+        ok( $pdb->Password(), 'Forget password' );
+
+        eval{ $decrypted = $pdb->Decrypt($pdb->{'records'}->[$rec_num]) };
+        ok( $@, 'Don\'t decrypt' );
+
+        isnt( $decrypted->{password}, $new_password, 'Didn\'t get new password' );
+
+        ok( unlink($file), 'Remove test pdb v' . $options->{version} );
+    }
 }
-$test++;
-
-eval { $record = $pdb->append_Record() };
-unless( $@ ) {
-	print "ok $test\n";
-} else {
-	print "not ok $test\n";
-}
-$test++;
-
-eval { $pdb->Encrypt($record, $acct, $password) || die };
-unless( $@ ) {
-	print "ok $test\n";
-} else {
-	print "not ok $test\n";
-}
-$test++;
-
-eval { $pdb->Write($file) };
-unless( $@ ) {
-	print "ok $test\n";
-} else {
-	print "not ok $test\n";
-}
-$test++;
-
-$pdb = new Palm::PDB;
-$acct = {};
-
-eval { $pdb->Load($file) };
-unless( $@ ) {
-	print "ok $test\n";
-} else {
-	print "not ok $test\n";
-}
-$test++;
-
-eval { $pdb->Password($password) || die };
-unless( $@ ) {
-	print "ok $test\n";
-} else {
-	print "not ok $test\n";
-}
-$test++;
-
-eval { $acct = $pdb->Decrypt($pdb->{'records'}->[1]) || die };
-unless( $@ ) {
-	print "ok $test\n";
-} else {
-	print "not ok $test\n";
-}
-$test++;
-
-if ($acct->{'password'} eq $password) {
-	print "ok $test\n";
-} else {
-	print "not ok $test\n";
-}
-$test++;
-
-my $old_date = $acct->{'lastchange'};
-
-eval { $pdb->Password($password, $new_password) || die };
-unless( $@ ) {
-	print "ok $test\n";
-} else {
-	print "not ok $test\n";
-}
-$test++;
-
-$acct = {};
-eval { $acct = $pdb->Decrypt($pdb->{'records'}->[1]) || die };
-unless( $@ ) {
-	print "ok $test\n";
-} else {
-	print "not ok $test\n";
-}
-$test++;
-
-if ($acct->{'password'} eq $password) {
-	print "ok $test\n";
-} else {
-	print "not ok $test\n";
-}
-$test++;
-
-my $new_date = $acct->{'lastchange'};
-
-if (
-    $old_date->{'day'}   == $new_date->{'day'}   &&
-    $old_date->{'month'} == $new_date->{'month'} &&
-    $old_date->{'year'}  == $new_date->{'year'}
-) {
-    print "ok $test\n";
-} else {
-    print "not ok $test\n";
-}
-$test++;
-
-$acct->{'password'} = $new_password;
-
-eval { $acct = $pdb->Encrypt($pdb->{'records'}->[1], $acct) || die };
-unless( $@ ) {
-	print "ok $test\n";
-} else {
-	print "not ok $test\n";
-}
-$test++;
-
-$old_date = $new_date;
-$new_date = $acct->{'lastchange'};
-
-eval { $acct = $pdb->Decrypt($pdb->{'records'}->[1]) || die };
-unless( $@ ) {
-	print "ok $test\n";
-} else {
-	print "not ok $test\n";
-}
-$test++;
-
-if (
-    $old_date->{'day'}   != $new_date->{'day'}   ||
-    $old_date->{'month'} != $new_date->{'month'} ||
-    $old_date->{'year'}  != $new_date->{'year'}
-) {
-    print "ok $test\n";
-} else {
-    print "not ok $test\n";
-}
-$test++;
-
-if ($acct->{'password'} eq $new_password) {
-	print "ok $test\n";
-} else {
-	print "not ok $test\n";
-}
-$test++;
-
-eval { $pdb->Password() || die };
-unless( $@ ) {
-	print "ok $test\n";
-} else {
-	print "not ok $test\n";
-}
-$test++;
-
-eval { $acct = $pdb->Decrypt($pdb->{'records'}->[1]) || die };
-if ( $@ ) {
-	print "ok $test\n";
-} else {
-	print "not ok $test\n";
-}
-$test++;
-
-unless ($acct->{'password'} eq $password) {
-	print "ok $test\n";
-} else {
-	print "not ok $test\n";
-}
-$test++;
-
-
-unlink($file);
 
 1;
-
