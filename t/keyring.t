@@ -1,10 +1,10 @@
 #!/usr/bin/perl -T
-# $RedRiver: keyring.t,v 1.12 2007/02/23 22:05:17 andrew Exp $
+# $RedRiver: keyring.t,v 1.15 2007/09/12 02:44:36 andrew Exp $
 use strict;
 use warnings;
 
-use Test::More tests => 44;
-use YAML;
+use Test::More tests => 52;
+use Data::Dumper;
 
 BEGIN { 
     use_ok( 'Palm::PDB' ); 
@@ -24,7 +24,6 @@ my @o = (
         version      => 5,
         password     => $password,
         cipher       => 1,
-        v4compatible => 1,
     },
 );
 
@@ -34,14 +33,39 @@ foreach my $options (@o) {
     my $decrypted;
 
     my $acct = {
-        name        => 'test3',
-        account     => 'atestaccount',
-        password    => $password,
-        notes       => 'now that really roxorZ!',
-        lastchange  => {
-            day   =>  2,
-            month =>  2,
-            year  => 99,
+        0 => {
+            label => 'name',
+            label_id => 0,
+            data  => 'test3',
+            font  => 0,
+        },
+        1 => {
+            label => 'account',
+            label_id => 1,
+            data  => 'atestaccount',
+            font  => 0,
+        },
+        2 => {
+            label    => 'password',
+            label_id => 2,
+            data     => $password,
+            font  => 0,
+        },
+        3 => {
+            label => 'lastchange',
+            label_id => 3,
+            data => {
+                day   =>  2,
+                month =>  2,
+                year  => 99,
+            },
+            font  => 0,
+        },
+        255 => {
+            label => 'notes',
+            label_id => 255,
+            data  => 'now that really roxorZ!',
+            font  => 0,
         },
     };
 
@@ -65,59 +89,61 @@ foreach my $options (@o) {
         }
 
         ok( $pdb = new Palm::Keyring($options), 
-            'New Palm::Keyring v' . $options->{version} );
+            'new Palm::Keyring v' . $options->{version});
 
         ok( $record = $pdb->append_Record(), 'Append Record' );
 
-        ok( $pdb->Encrypt($record, $acct, $password), 'Encrypt account into record' );
+        ok( $pdb->Encrypt($record, $password, $acct), 
+            'Encrypt account into record' );
 
         ok( $pdb->Write($file), 'Write file' );
 
         $pdb = undef;
 
-
-        my $rec_num = 1;
-        if ($options->{version} == 4) {
-            ok( $pdb = new Palm::PDB(), 'New Palm::PDB' );
-        } else {
-            ok( $pdb = new Palm::Keyring(-v4compatible => 1), 'New Palm::Keyring' );
-            $rec_num = 0;
-        }
+        ok( $pdb = new Palm::PDB(), 'new Palm::Keyring' );
 
         ok( $pdb->Load($file), 'Load File' );
 
         ok( $pdb->Password($password), 'Verify Password' );
 
-        ok( $decrypted = $pdb->Decrypt($pdb->{records}->[$rec_num]), 'Decrypt record' );
+        my $rec_num = 0;
+        ok( $decrypted = $pdb->Decrypt($pdb->{records}->[$rec_num]), 
+            'Decrypt record' );
 
-        is( $decrypted->{password}, $password, 'Got password' );
+        is( $decrypted->{2}->{data}, $password, 'Got password' );
 
         is_deeply( $decrypted, $acct, 'Account Matches' );
 
-        my $old_date = $decrypted->{'lastchange'};
+        my $old_date = $decrypted->{3}->{data};
 
         ok( $pdb->Password($password, $new_password), 'Change PDB Password' );
 
-        ok( $decrypted = $pdb->Decrypt($pdb->{'records'}->[$rec_num]), 'Decrypt with new password' );
+        ok( $decrypted = $pdb->Decrypt($pdb->{'records'}->[$rec_num]), 
+            'Decrypt with new password' );
 
-        my $new_date = $decrypted->{'lastchange'};
+        my $new_date = $decrypted->{3}->{data};
 
         is_deeply( $old_date, $new_date, 'Date didn\'t change' );
 
-        $acct->{'password'} = $new_password;
+        $acct->{2}->{data} = $new_password;
 
-        ok(  $pdb->Encrypt($pdb->{'records'}->[$rec_num], $acct), 'Change record' );
+        $pdb->{records}->[$rec_num]->{plaintext} = $acct;
 
-        ok( $decrypted = $pdb->Decrypt($pdb->{'records'}->[$rec_num]), 'Decrypt new record' );
+        ok(  $pdb->Encrypt($pdb->{'records'}->[$rec_num]), 'Change record' );
 
-        $new_date = $decrypted->{'lastchange'};
+        ok( $decrypted = $pdb->Decrypt($pdb->{'records'}->[$rec_num]), 
+            'Decrypt new record' );
+
+        $new_date = $decrypted->{3}->{data};
 
         my $od = join '/', map { $old_date->{$_} } sort keys %{ $old_date };
         my $nd = join '/', map { $new_date->{$_} } sort keys %{ $new_date };
 
         isnt( $od, $nd, 'Date changed');
 
-        is( $decrypted->{password}, $new_password, 'Got new password' ); 
+        is( $decrypted->{2}->{data}, $new_password, 'Got new password' ); 
+
+        my $last_decrypted = $decrypted;
 
         $decrypted = {};
         ok( $pdb->Password(), 'Forget password' );
@@ -127,7 +153,22 @@ foreach my $options (@o) {
 
         isnt( $decrypted->{password}, $new_password, 'Didn\'t get new password' );
 
+        ok( $pdb->Unlock($new_password), 'Unlock' );
+
+        my @plaintext = map { $_->{plaintext} } @{ $pdb->{records} };
+
+        is_deeply( $plaintext[0], $last_decrypted, 'Account Matches' );
+
+        ok( $pdb->Lock(), 'Lock' );
+
+        my $cleared_decrypted = {};
+        $cleared_decrypted->{0}= $last_decrypted->{0};
+        @plaintext = map { $_->{plaintext} } @{ $pdb->{records} };
+
+        is_deeply( $plaintext[0], $cleared_decrypted, 'Cleared records' );
+
         ok( unlink($file), 'Remove test pdb v' . $options->{version} );
+
     }
 }
 

@@ -1,5 +1,5 @@
 package Palm::Keyring;
-# $RedRiver: Keyring.pm,v 1.45 2007/02/26 00:02:13 andrew Exp $
+# $RedRiver: Keyring.pm,v 1.49 2007/09/12 03:39:22 andrew Exp $
 ########################################################################
 # Keyring.pm *** Perl class for Keyring for Palm OS databases.
 #
@@ -59,31 +59,56 @@ my @CRYPTS = (
     },
 );
 
+my %LABELS = (
+    0 => {
+        id   => 0,
+        name => 'name',
+    },
+    1 => {
+        id   => 1,
+        name => 'account',
+    },
+    2 => {
+        id   => 2,
+        name => 'password',
+    },
+    3 => {
+        id   => 3,
+        name => 'lastchange',
+    },
+    255 => {
+        id   => 255,
+        name => 'notes',
+    },
+);
 
-our $VERSION = 0.95;
+
+our $VERSION = '0.96_01';
 
 sub new 
 {
     my $classname = shift;
     my $options = {};
 
-    # hashref arguments
-    if (ref $_[0] eq 'HASH') {
-      $options = shift;
-    }
+    if (@_) {
+        # hashref arguments
+        if (ref $_[0] eq 'HASH') {
+          $options = shift;
+        }
 
-    # CGI style arguments
-    elsif ($_[0] =~ /^-[a-zA-Z0-9_]{1,20}$/) {
-      my %tmp = @_;
-      while ( my($key,$value) = each %tmp) {
-        $key =~ s/^-//;
-        $options->{lc $key} = $value;
-      }
-    }
+        # CGI style arguments
+        elsif ($_[0] =~ /^-[a-zA-Z0-9_]{1,20}$/) {
+          my %tmp = @_;
+          while ( my($key,$value) = each %tmp) {
+            $key =~ s/^-//;
+            $options->{lc $key} = $value;
+          }
+        }
 
-    else {
-        $options->{password} = shift;
-        $options->{version}  = shift;
+        else {
+            $options->{password} = shift;
+            $options->{version}  = shift;
+        }
     }
 
     # Create a generic PDB. No need to rebless it, though.
@@ -132,7 +157,7 @@ sub import
 sub crypts
 {
     my $crypt = shift;
-    if (! defined $crypt || ! length $crypt) {
+    if ((! defined $crypt) || (! length $crypt)) {
         return;
     } elsif ($crypt =~ /\D/) {
         foreach my $c (@CRYPTS) {
@@ -147,6 +172,60 @@ sub crypts
     }
 }
 
+sub labels
+{
+    my $label = shift;
+
+    if ((! defined $label) || (! length $label)) {
+        return;
+    } elsif (exists $LABELS{$label}) {
+        return $LABELS{$label};
+    } else {
+        foreach my $l (keys %LABELS) {
+            if ($LABELS{$l}{name} eq $label) {
+                return $LABELS{$l};
+            }
+        }
+
+        # didn't find it, make one.
+        if ($label =~ /^\d+$/) {
+            return {
+                id => $label,
+                name => undef,
+            };
+        } else {
+            return;
+        }
+    }
+}
+
+# Write
+
+sub Write
+{
+    my $self = shift;
+
+    if ($self->{version} == 4) {
+       # Give the PDB the first record that will hold the encrypted password
+        my $rec = $self->new_Record;
+        $rec->{data} = $self->{encpassword};
+
+        if (ref $self->{records} eq 'ARRAY') {
+            unshift @{ $self->{records} }, $rec;
+        } else {
+            $self->{records} = [ $rec ];
+        }
+    }
+
+    my $rc = $self->SUPER::Write(@_);
+
+    if ($self->{version} == 4) {
+        shift @{ $self->{records} };
+    }
+
+    return $rc;
+}
+
 # ParseRecord
 
 sub ParseRecord 
@@ -158,12 +237,24 @@ sub ParseRecord
 
     if ($self->{version} == 4) {
         # skip the first record because it contains the password.
-        return $rec if ! exists $self->{records}; 
+        if (! exists $self->{records}) {
+            $self->{encpassword} = $rec->{data};
+            return '__DELETE_ME__';
+        }
+
+        if ($self->{records}->[0] eq '__DELETE_ME__') {
+            shift @{ $self->{records} };
+        }
 
         my ( $name, $encrypted ) = split /$NULL/xm, $rec->{data}, 2;
 
         return $rec if ! $encrypted;
-        $rec->{name}      = $name;
+        $rec->{plaintext}->{0} = {
+            label => 'name',
+            label_id => 0,
+            data  => $name,
+            font  => 0,
+        };
         $rec->{encrypted} = $encrypted;
         delete $rec->{data};
 
@@ -174,12 +265,12 @@ sub ParseRecord
         my ($field, $extra) = _parse_field($rec->{data});
         delete $rec->{data};
 
-        $rec->{name}      = $field->{data};
+        $rec->{plaintext}->{0} = $field;
         $rec->{ivec}      = substr $extra, 0, $blocksize;
         $rec->{encrypted} = substr $extra, $blocksize;
 
     } else {
-        die 'Unsupported Version';
+        croak "Unsupported Version $self->{version}";
         return;
     }
 
@@ -195,35 +286,30 @@ sub PackRecord
 
     if ($self->{version} == 4) {
         if ($rec->{encrypted}) {
-            if (! defined $rec->{name}) {
-                $rec->{name} = $EMPTY;
-            }
-            $rec->{data} = join $NULL, $rec->{name}, $rec->{encrypted};
-            delete $rec->{name};
+            my $name = $rec->{plaintext}->{0}->{data} || $EMPTY;
+            $rec->{data} = join $NULL, $name, $rec->{encrypted};
+            delete $rec->{plaintext};
             delete $rec->{encrypted};
         }
 
     } elsif ($self->{version} == 5) {
         my $field;
-        if ($rec->{name}) {
-            $field = {
-                'label_id' => 1,
-                'data'     => $rec->{name},
-                'font'     => 0,
-            };
+        if ($rec->{plaintext}->{0}) {
+            $field = $rec->{plaintext}->{0};
         } else {
             $field = {
-                'label_id' => $EMPTY,
+                'label'    => 'name',
+                'label_id' => 0,
                 'data'     => $EMPTY,
                 'font'     => 0,
             };
         }
         my $packed = _pack_field($field);
 
-        $rec->{data} = join '', $packed, $rec->{ivec}, $rec->{encrypted};
+        $rec->{data} = join $EMPTY, $packed, $rec->{ivec}, $rec->{encrypted};
 
     } else {
-        die 'Unsupported Version';
+        croak "Unsupported Version $self->{version}";
     }
 
     return $self->SUPER::PackRecord($rec, @_);
@@ -255,8 +341,7 @@ sub ParseAppInfoBlock
         _parse_appinfo_v5($appinfo) || return;
 
     } else {
-        die "Unsupported Version";
-        return;
+        croak "Unsupported Version $self->{version}";
     }
 
     return $appinfo;
@@ -302,8 +387,7 @@ sub PackAppInfoBlock
     } elsif ($self->{version} == 5) {
         _pack_appinfo_v5($self->{appinfo});
     } else {
-        die "Unsupported Version";
-        return;
+        croak "Unsupported Version $self->{version}";
     }
     return &Palm::StdAppInfo::pack_StdAppInfo($self->{appinfo});
 }
@@ -338,8 +422,8 @@ sub Encrypt
 {
     my $self = shift;
     my $rec  = shift;
-    my $data = shift;
     my $pass = shift || $self->{password};
+    my $data = shift || $rec->{plaintext};
     my $ivec = shift;
 
     if ( ! $pass && ! $self->{appinfo}->{key}) {
@@ -351,7 +435,7 @@ sub Encrypt
     }
 
     if ( ! $data) {
-        croak("Needed parameter 'data' not passed!\n");
+        croak("Needed 'plaintext' not passed!\n");
     }
 
     if ( $pass && ! $self->Password($pass)) {
@@ -366,29 +450,25 @@ sub Encrypt
     my $encrypted;
     if ($self->{version} == 4) {
         $self->{digest} ||= _calc_keys( $pass );
-        $encrypted = _encrypt_v4($data, $acct, $self->{digest});
-        $rec->{name}    ||= $data->{name};
+        my $datav4 = {
+            name       => $data->{0}->{data},
+            account    => $data->{1}->{data},
+            password   => $data->{2}->{data},
+            lastchange => $data->{3}->{data},
+            notes      => $data->{255}->{data},
+        };
+        my $acctv4 = {
+            name       => $acct->{0}->{data},
+            account    => $acct->{1}->{data},
+            password   => $acct->{2}->{data},
+            lastchange => $acct->{3}->{data},
+            notes      => $acct->{255}->{data},
+        };
+        $encrypted = _encrypt_v4($datav4, $acctv4, $self->{digest});
 
     } elsif ($self->{version} == 5) {
-        my @accts = ($data, $acct);
-        if ($self->{options}->{v4compatible}) {
-            $rec->{name} ||= $data->{name};
-            foreach my $a (@accts) {
-                my @fields;
-                foreach my $k (sort keys %{ $a }) {
-                    my $field = {
-                        label    => $k,
-                        font     => 0,
-                        data     => $a->{$k},
-                    };
-                    push @fields, $field;
-                }
-                $a = \@fields;
-            }
-        }
-
         ($encrypted, $ivec) = _encrypt_v5(
-            @accts,
+            $data, $acct,
             $self->{appinfo}->{key}, 
             $self->{appinfo}->{cipher},
             $ivec,
@@ -398,8 +478,10 @@ sub Encrypt
         }
 
     } else {
-        die "Unsupported Version";
+        croak "Unsupported Version $self->{version}";
     }
+
+    $rec->{plaintext}->{0} = $data->{0};
 
     if ($encrypted) { 
         if ($encrypted eq '1') {
@@ -429,6 +511,7 @@ sub _encrypt_v4
     my $changed      = 0;
     my $need_newdate = 0;
     if ($old && %{ $old }) {
+        no warnings 'uninitialized';
         foreach my $key (keys %{ $new }) {
             next if $key eq 'lastchange';
             if ($new->{$key} ne $old->{$key}) {
@@ -500,69 +583,61 @@ sub _encrypt_v5
 
     my $changed = 0;
     my $need_newdate = 1;
-    my $date_index;
-    for (my $i = 0; $i < @{ $new }; $i++) {
-        if (
-            ($new->[$i]->{label_id} && $new->[$i]->{label_id} == 3) ||
-            ($new->[$i]->{label} && $new->[$i]->{label} eq 'lastchange')
-        ) {
-            $date_index   = $i;
-            if ( $old && $#{ $new } == $#{ $old } && (
-                    $new->[$i]{data}{day}   != $old->[$i]{data}{day}   ||
-                    $new->[$i]{data}{month} != $old->[$i]{data}{month} ||
-                    $new->[$i]{data}{year}  != $old->[$i]{data}{year}
+    if ($new->{3}->{data}) {
+        $need_newdate = 0;
+    }
+    foreach my $k (keys %{ $new }) {
+        if (! $old) {
+            $changed = 1;
+        } elsif ($k == 3) {
+            if ($old && (
+                    $new->{$k}{data}{day}   == $old->{$k}{data}{day}   &&
+                    $new->{$k}{data}{month} == $old->{$k}{data}{month} &&
+                    $new->{$k}{data}{year}  == $old->{$k}{data}{year}
                 )) {
                 $changed      = 1;
-                $need_newdate = 0;
+                $need_newdate = 1;
             }
 
-        } elsif ($old && $#{ $new } == $#{ $old }) {
-            my $n = join ':', %{ $new->[$i] };
-            my $o = join ':', %{ $old->[$i] };
+        } else {
+            my $n = join ':', sort %{ $new->{$k} };
+            my $o = join ':', sort %{ $old->{$k} };
             if ($n ne $o) {
                 $changed = 1;
             }
-        } elsif ($#{ $new } != $#{ $old }) {
-            $changed = 1;
         }
-    }
-    if ($old && (! @{ $old }) && $date_index) {
-        $need_newdate = 0;
     }
 
     return 1, 0 if $changed == 0;
 
-    if ($need_newdate || ! defined $date_index) {
+    if ($need_newdate) {
         my ($day, $month, $year) = (localtime)[3,4,5];
-        my $date = {
-            year  => $year,
-            month => $month,
-            day   => $day,
+        $new->{3} = {
+            label => 'lastchange',
+            label_id => 3,
+            font  => 0,
+            data => {
+                year  => $year,
+                month => $month,
+                day   => $day,
+           },
         };
-        if (defined $date_index) {
-            $new->[$date_index]->{data} = $date;
-        } else {
-            push @{ $new }, {
-                label => 'lastchange',
-                font  => 0,
-                data  => $date,
-            };
-        }
     } else {
         # XXX Need to actually validate the above information somehow
-        if ($new->[$date_index]->{data}->{year} >= 1900) {
-            $new->[$date_index]->{data}->{year} -= 1900;
+        if ($new->{3}->{data}->{year} >= 1900) {
+            $new->{3}->{data}->{year} -= 1900;
         }
     }
 
-    my $decrypted;
-    foreach my $field (@{ $new }) {
-        $decrypted .= _pack_field($field);
+    my $plaintext;
+    foreach my $k (keys %{ $new }) {
+        $plaintext .= _pack_field($new->{$k});
     }
+
     my $encrypted;
     if ($c->{name} eq 'None') {
         # do nothing
-        $encrypted = $decrypted;
+        $encrypted = $plaintext;
 
     } elsif ($c->{name} eq 'DES_EDE3' or $c->{name} eq 'Rijndael') {
         require Crypt::CBC;
@@ -581,10 +656,10 @@ sub _encrypt_v5
             croak("Unable to set up encryption!");
         }
 
-        $encrypted = $cbc->encrypt($decrypted);
+        $encrypted = $cbc->encrypt($plaintext);
 
     } else {
-        die "Unsupported Version";
+        croak "Unsupported Crypt $c->{name}";
     } 
 
     return $encrypted, $ivec;
@@ -614,30 +689,52 @@ sub Decrypt
         croak("No encrypted content!");
     }
 
+    my $plaintext;
     if ($self->{version} == 4) {
         $self->{digest} ||= _calc_keys( $pass );
         my $acct = _decrypt_v4($rec->{encrypted}, $self->{digest});
-        $acct->{name} ||= $rec->{name};
-        return $acct;
+        $plaintext = {
+            0 => $rec->{plaintext}->{0},
+            1 => {
+                label    => 'account',
+                label_id => 1,
+                font     => 0,
+                data     => $acct->{account},
+            },
+            2 => {
+                label    => 'password',
+                label_id => 2,
+                font     => 0,
+                data     => $acct->{password},
+            },
+            3 => {
+                label    => 'lastchange',
+                label_id => 3,
+                font     => 0,
+                data     => $acct->{lastchange},
+            },
+            255 => {
+                label    => 'notes',
+                label_id => 255,
+                font     => 0,
+                data     => $acct->{notes},
+            },
+        };
 
     } elsif ($self->{version} == 5) {
-        my $fields = _decrypt_v5(
+        $plaintext = _decrypt_v5(
             $rec->{encrypted}, $self->{appinfo}->{key}, 
             $self->{appinfo}->{cipher}, $rec->{ivec}, 
         );
-        if ($self->{options}->{v4compatible}) {
-            my %acct;
-            foreach my $f (@{ $fields }) {
-                $acct{ $f->{label} } = $f->{data};
-            }
-            $acct{name} ||= $rec->{name};
-            return \%acct;
-        } else {
-            return $fields;
-        }
+        $plaintext->{0} ||= $rec->{plaintext}->{0};
 
     } else {
-        die "Unsupported Version";
+        croak "Unsupported Version $self->{version}";
+    }
+
+    if ($plaintext) {
+        $rec->{plaintext} = $plaintext;
+        return $plaintext;
     }
     return;
 }
@@ -647,9 +744,9 @@ sub _decrypt_v4
     my $encrypted = shift;
     my $digest    = shift;
 
-    my $decrypted = _crypt3des( $encrypted, $digest, $DECRYPT );
+    my $plaintext = _crypt3des( $encrypted, $digest, $DECRYPT );
     my ( $account, $password, $notes, $packed_date ) 
-        = split /$NULL/xm, $decrypted, 4;
+        = split /$NULL/xm, $plaintext, 4;
 
     my $modified;
     if ($packed_date) {
@@ -674,11 +771,11 @@ sub _decrypt_v5
 
     my $c = crypts($cipher) or croak('Unknown cipher ' . $cipher);
 
-    my $decrypted;
+    my $plaintext;
 
     if ($c->{name} eq 'None') {
         # do nothing
-        $decrypted = $encrypted;
+        $plaintext = $encrypted;
 
     } elsif ($c->{name} eq 'DES_EDE3' or $c->{name} eq 'Rijndael') {
         require Crypt::CBC;
@@ -698,24 +795,23 @@ sub _decrypt_v5
         }
         my $len = $c->{blocksize} - length($encrypted) % $c->{blocksize};
         $encrypted .= $NULL x $len;
-        $decrypted  = $cbc->decrypt($encrypted);
+        $plaintext  = $cbc->decrypt($encrypted);
 
     } else {
-        die "Unsupported Version";
-        return;
+        croak "Unsupported Crypt $c->{name}";
     } 
 
-    my @fields;
-    while ($decrypted) {
+    my %fields;
+    while ($plaintext) {
         my $field;
-        ($field, $decrypted) = _parse_field($decrypted);
+        ($field, $plaintext) = _parse_field($plaintext);
         if (! $field) {
             last;
         }
-        push @fields, $field;
+        $fields{ $field->{label_id} } = $field;
     }
 
-    return \@fields;
+    return \%fields;
 }
 
 # Password
@@ -733,30 +829,18 @@ sub Password
     }
 
     if (
-        ($self->{version} == 4 && ! exists $self->{records}) ||
+        ($self->{version} == 4 && ! exists $self->{encpassword}) ||
         ($self->{version} == 5 && ! exists $self->{appinfo}->{masterhash})
     ) {
-        if ($self->{version} == 4) {
-            # Give the PDB the first record that will hold the encrypted password
-            $self->{records} = [ $self->new_Record ];
-        }
-
         return $self->_password_update($pass);
     }
 
     if ($new_pass) {
-        my $v4compat = $self->{options}->{v4compatible};
-        $self->{options}->{v4compatible} = 0;
-
         my @accts = ();
-        foreach my $i (0..$#{ $self->{records} }) {
-            if ($self->{version} == 4 && $i == 0) {
-                push @accts, undef;
-                next;
-            }
-            my $acct = $self->Decrypt($self->{records}->[$i], $pass);
+        foreach my $rec (@{ $self->{records} }) {
+            my $acct = $self->Decrypt($rec, $pass);
             if ( ! $acct ) {
-                croak("Couldn't decrypt $self->{records}->[$i]->{name}");
+                croak("Couldn't decrypt $rec->{plaintext}->{0}->{data}");
             }
             push @accts, $acct;
         }
@@ -767,14 +851,10 @@ sub Password
         $pass = $new_pass;
 
         foreach my $i (0..$#accts) {
-            if ($self->{version} == 4 && $i == 0) {
-                next;
-            }
             delete $self->{records}->[$i]->{encrypted};
-            $self->Encrypt($self->{records}->[$i], $accts[$i], $pass);
+            $self->{records}->[$i]->{plaintext} = $accts[$i];
+            $self->Encrypt($self->{records}->[$i], $pass);
         }
-
-        $self->{options}->{v4compatible} = $v4compat;
     }
 
     if (defined $self->{password} && $pass eq $self->{password}) {
@@ -783,11 +863,10 @@ sub Password
     }
 
     if ($self->{version} == 4) {
-        # AFAIK the thing we use to test the password is
-        #     always in the first entry
-        my $valid = _password_verify_v4($pass, $self->{records}->[0]->{data});
+        my $valid = _password_verify_v4($pass, $self->{encpassword});
 
-        # May as well generate the keys we need now, since we know the password is right
+        # May as well generate the keys we need now, 
+        # since we know the password is right
         if ($valid) {
             $self->{digest} = _calc_keys($pass);
             if ($self->{digest} ) {
@@ -798,7 +877,7 @@ sub Password
     } elsif ($self->{version} == 5) {
         return _password_verify_v5($self->{appinfo}, $pass);
     } else {
-        # XXX unsupported version
+        croak "Unsupported version $self->{version}";
     }
 
     return;
@@ -883,7 +962,7 @@ sub _password_update
 
         # AFAIK the thing we use to test the password is
         #     always in the first entry
-        $self->{records}->[0]->{data} = $data;
+        $self->{encpassword} = $data;
         $self->{password} = $pass;
         $self->{digest}   = _calc_keys( $self->{password} );
 
@@ -962,6 +1041,39 @@ sub _password_update_v5
     $appinfo->{key}            = $key;
 
     return $key;
+}
+
+sub Unlock
+{
+    my $self = shift;
+    my ($pass) = @_;
+    $pass ||= $self->{password};
+
+    if ( $pass && ! $self->Password($pass)) {
+        croak("Invalid Password!\n");
+    }
+
+    foreach my $rec (@{ $self->{records} }) {
+        $self->Decrypt($rec);
+    }
+
+    return 1;
+
+}
+
+sub Lock
+{
+    my $self = shift;
+
+    $self->Password();
+
+    foreach my $rec (@{ $self->{records} }) {
+        my $name = $rec->{plaintext}->{0};
+        delete $rec->{plaintext};
+        $rec->{plaintext}->{0} = $name;
+    }
+
+    return 1;
 }
 
 # Helpers
@@ -1062,20 +1174,13 @@ sub _parse_field
 {
     my $field = shift;
 
-    my @labels;
-    $labels[0]   = 'name';
-    $labels[1]   = 'account';
-    $labels[2]   = 'password';
-    $labels[3]   = 'lastchange';
-    $labels[255] = 'notes';
-
-    my ($len) = unpack "n1", $field;
+    my ($len) = unpack "n", $field;
     if ($len + 4 > length $field) {
         return undef, $field;
     }
     my $unpackstr = "x2 C1 C1 A$len";
     my $offset    =   2 +1 +1 +$len;
-    if ($len % 2) { # && $len + 4 < length $field) {
+    if ($len % 2) {
         # trim the 0/1 byte padding for next even address.
         $offset++;
         $unpackstr .= ' x' 
@@ -1084,13 +1189,21 @@ sub _parse_field
     my ($label, $font, $data) = unpack $unpackstr, $field;
     my $leftover = substr $field, $offset;
 
-    if ($label && $label == 3) {
+    my $label_id = $label;
+    my $l = labels($label);
+    if ($l) {
+        $label = $l->{name} || $l->{id};
+        $label_id = $l->{id};
+    }
+
+    if ($label_id && $label_id == 3) {
+        ($data) = substr $field, 4, $len;
         $data = _parse_keyring_date($data);
     }
     return {
         #len      => $len,
-        label    => $labels[ $label ] || $label,
-        label_id => $label,
+        label    => $label,
+        label_id => $label_id,
         font     => $font,
         data     => $data,
     }, $leftover;
@@ -1100,20 +1213,18 @@ sub _pack_field
 {
     my $field = shift;
 
-    my %labels = (
-        name       =>   0,
-        account    =>   1,
-        password   =>   2,
-        lastchange =>   3,
-        notes      => 255,
-    );
-
     my $packed;
     if (defined $field) {
         my $label = $field->{label_id} || 0;
         if (defined $field->{label} && ! $label) {
-            $label = $labels{ $field->{label} };
+            $label = $field->{label};
         }
+
+        my $l = labels($field->{label});
+        if ($l) {
+            $label = $l->{id};
+        }
+
         my $font  = $field->{font} || 0;
         my $data  = defined $field->{data} ? $field->{data} : $EMPTY;
 
@@ -1163,7 +1274,7 @@ sub _pack_keyring_date
     $year -= 4;
     $month++;
 
-    return pack 'n', $day | ($month << 5) | ($year << 9);
+    return pack 'n*', $day | ($month << 5) | ($year << 9);
 }
 
 
@@ -1280,16 +1391,11 @@ The Keyring PDB handler is a helper class for the Palm::PDB package. It
 parses Keyring for Palm OS databases.  See
 L<http://gnukeyring.sourceforge.net/>.
 
-It has the standard Palm::PDB methods with 2 additional public methods.  
-Decrypt and Encrypt.
+It has the standard Palm::PDB methods with 4 additional public methods.  
+Unlock, Lock, Decrypt and Encrypt.
 
 It currently supports the v4 Keyring databases as well as
-the pre-release v5 databases.  I am not completely happy with the interface
-for accessing v5 databases, so any suggestions on improvements on 
-the interface are appreciated.
-
-This module doesn't store the decrypted content.  It only keeps it until it 
-returns it to you or encrypts it.
+the pre-release v5 databases. 
 
 =head1 SYNOPSIS
 
@@ -1301,24 +1407,12 @@ returns it to you or encrypts it.
     my $pdb  = new Palm::PDB;
     $pdb->Load($file);
     
-    foreach (0..$#{ $pdb->{records} }) {
-        # skip the password record for version 4 databases
-        next if $_ == 0 && $pdb->{version} == 4;
-        my $rec  = $pdb->{records}->[$_];
-        my $acct = $pdb->Decrypt($rec, $pass);
-        print $rec->{name}, ' - ';
-        if ($pdb->{version} == 4 || $pdb->{options}->{v4compatible}) {
-            print ' - ', $acct->{account};
-        } else {
-            foreach my $a (@{ $acct }) {
-                if ($a->{label} eq 'account') {
-                    print ' - ',  $a->{data};
-                    last;
-                }
-            }
-        }
-        print "\n";
+    $pdb->Unlock($pass);
+    foreach my $rec (@{ $pdb->{records} }) {
+        print $rec->{plaintext}->{0}->{data}, ' - ', 
+              $rec->{plaintext}->{1}->{data}, "\n";
     }
+    $pdb->Lock();
 
 =head1 SUBROUTINES/METHODS
 
@@ -1332,7 +1426,7 @@ and an empty record list.
 Use this method if you're creating a Keyring PDB from scratch otherwise you 
 can just use Palm::PDB::new() before calling Load().
 
-If you pass in a password, it will initalize the first record with the encrypted 
+If you pass in a password, it will initalize the database with the encrypted 
 password.
 
 new() now also takes options in other formats
@@ -1354,14 +1448,9 @@ The password used to initialize the database
 
 The version of database to create.  Accepts either 4 or 5.  Currently defaults to 4.
 
-=item v4compatible
-
-The format of the fields passed to Encrypt and returned from Decrypt have changed.
-This allows programs to use the newer databases with few changes but with less features.
-
 =item cipher
 
-The cipher to use.  Either the number or the name.
+The cipher to use.  Either the number or the name.  Only used by v5 datbases.
 
     0 => None
     1 => DES_EDE3
@@ -1370,11 +1459,7 @@ The cipher to use.  Either the number or the name.
 
 =item iterations
 
-The number of iterations to encrypt with.
-
-=item options
-
-A hashref of the options that are set
+The number of iterations to encrypt with.  Only used by somy crypts in v5 databases.
 
 =back
 
@@ -1411,9 +1496,42 @@ $c is now:
         default_iter => <default iterations for the cipher>,
     };
 
+If it is unable to find the crypt it will return undef.
+
+=head2 labels
+
+Pass in the id or the name of the label.  The label id is used as a key
+to the different parts of the records.
+See Encrypt() for details on where the label is used.
+
+This is a function, not a method.  
+
+    my $l = Palm::Keyring::labels($label);
+
+$l is now:
+
+    $l = {
+        id => 0,
+        name => 'name',
+    };
+
+If what you passed in was a number that doesn't have a name, it will return:
+
+    $l => {
+        id => $num_passed_in,
+        name => undef,
+    }
+
+If you pass in a name that it can't find, then it returns undef.
+
 =head2 Encrypt
 
-    $pdb->Encrypt($rec, $acct[, $password[, $ivec]]);
+=head3 B<!!! IMPORTANT !!!>  The order of the arguments to Encrypt has
+changed.  $password and $plaintext used to be swapped.  They changed
+because you can now set $rec->{plaintext} and not pass in $plaintext so
+$password is more important.
+
+    $pdb->Encrypt($rec[, $password[, $plaintext[, $ivec]]]);
 
 Encrypts an account into a record, either with the password previously 
 used, or with a password that is passed.
@@ -1423,52 +1541,53 @@ not used by v4 databases.  Normally this is not passed and is generated
 randomly.
 
 $rec is a record from $pdb->{records} or a new_Record().
-The v4 $acct is a hashref in the format below.
+$rec->{plaintext} is a hashref in the format below.
 
-    my $v4acct = {
-        name       => $rec->{name},
-        account    => $account,
-        password   => $password,
-        notes      => $notes,
-        lastchange => {
-            year  => 107, # years since 1900
-            month =>   0, # 0-11, 0 = January, 11 = December
-            day   =>  30, # 1-31, same as localtime
+    $plaintext = {
+        0 => {
+            label    => 'name',
+            label_id => 0,
+            font     => 0,
+            data     => $name,
+        1 => {
+            label    => 'account',
+            label_id => 1,
+            font     => 0,
+            data     => $account,
+        },
+        2 => {
+            label    => 'password',
+            label_id => 2,
+            font     => 0,
+            data     => $password,
+        },
+        3 => {
+            label    => 'lastchange',
+            label_id => 3,
+            font     => 0,
+            data     => {
+                year => $year, # usually the year - 1900
+                mon  => $mon,  # range 0-11
+                day  => $day,  # range 1-31
+            },
+        },
+        255 => {
+            label    => 'notes',
+            label_id => 255,
+            font     => 0,
+            data     => $notes,
         },
     };
 
-The v5 $acct is an arrayref full of hashrefs that contain each encrypted field.
+The account name is stored in $rec->{plaintext}->{0}->{data} for both v4
+and v5 databases even when the record has not been Decrypt()ed.  
 
-    my $v5acct = [
-        {
-            'label_id' => 2,
-            'data' => 'abcd1234',
-            'label' => 'password',
-            'font' => 0
-        },
-        {
-            'label_id' => 3,
-            'data' => {
-                'month' => 1,
-                'day' => 11,
-                'year' => 107
-            },
-            'label' => 'lastchange',
-            'font' => 0
-        },
-        {
-            'label_id' => 255,
-            'data' => 'This is a short note.',
-            'label' => 'notes',
-            'font' => 0
-        }
-    ];
-
-
-The account name is stored in $rec->{name} for both v4 and v5 databases.  
-It is not returned in the decrypted information for v5.  
-
-    $rec->{name} = 'account name';
+    $rec->{plaintext}->{0} => {
+        label    => 'name',
+        label_id => 0,
+        font     => 0,
+        data     => 'account name',
+    };
 
 If you have changed anything other than the lastchange, or don't pass in a 
 lastchange key, Encrypt() will generate a new lastchange date for you.
@@ -1476,20 +1595,22 @@ lastchange key, Encrypt() will generate a new lastchange date for you.
 If you pass in a lastchange field that is different than the one in the
 record, it will honor what you passed in.
 
-Encrypt() only uses the $acct->{name} if there is not already a $rec->{name}.
+You can either set $rec->{plaintext} or pass in $plaintext.  $plaintext
+is used over anything in $rec->{plaintext}.
+
 
 =head2 Decrypt
 
-    my $acct = $pdb->Decrypt($rec[, $password]);
+    my $plaintext = $pdb->Decrypt($rec[, $password]);
 
-Decrypts the record and returns a reference for the account as described 
-under Encrypt().  
+Decrypts the record and returns a reference for the plaintext account as
+described under Encrypt().  
+Also sets $rec->{plaintext} with the same information as $plaintext as
+described in Encrypt().
 
-    foreach (0..$#{ $pdb->{records} }) {
-        next if $_ == 0 && $pdb->{version} == 4;
-        my $rec = $pdb->{records}->[$_];
-        my $acct = $pdb->Decrypt($rec);
-        # do something with $acct
+    foreach my $rec (@{ $pdb->{records} }) {
+        my $plaintext = $pdb->Decrypt($rec);
+        # do something with $plaintext
     }
 
 
@@ -1512,6 +1633,7 @@ For v4
 
     $pdb->{digest}   = the calculated digest used from the key;
     $pdb->{password} = the password that was passed in;
+    $pdb->{encpassword} = the password as stored in the pdb;
 
 For v5
 
@@ -1527,6 +1649,38 @@ For v5
         salt       => the salt that is either read out of the database 
                       or calculated when setting a new password.
     };
+
+=head2 Unlock
+
+    $pdb->Unlock([$password]);
+
+Decrypts all the records.  Sets $rec->{plaintext} for all records.
+
+This makes it easy to show all decrypted information.
+
+   my $pdb = Palm::KeyRing->new();
+   $pdb->Load($keyring_file);
+   $pdb->Unlock($password);
+   foreach my $plaintext (map { $_->{plaintext} } @{ $pdb->{records} }) {
+       # Do something like display the account.
+   }
+   $pdb->Lock();
+
+=head2 Lock
+
+    $pdb->Lock();
+
+Unsets $rec->{plaintext} for all records and unsets the saved password.
+
+This does NOT Encrypt() any of the records before clearing them, so if
+you are not careful you will lose information.
+
+B<CAVEAT!> This only does "delete $rec->{plaintext}" and the same for the
+password.  If someone knows of a cross platform reliable way to make
+sure that the information is actually cleared from memory I would
+appreciate it.  Also, if someone knows how to make sure that the stuff
+in $rec->{plaintext} is not written to swap, that would be very handy as
+well.
 
 =head2 Other overridden subroutines/methods
 
@@ -1557,9 +1711,17 @@ Adds some fields to a record from Palm::StdAppInfo::ParseRecord()
         encrypted  => the encrypted information
     };
 
+For v4 databases it also removes record 0 and moves the encrypted password 
+to $self->{encpassword}.
+
 =item PackRecord
 
 Reverses ParseRecord and then sends it through Palm::StdAppInfo::PackRecord()
+
+=item Write
+
+For v4 databases it puts back the record 0 for the encrypted password before
+writing it.
 
 =back
 
@@ -1589,8 +1751,9 @@ Crytp::Rijndael - AES encryption schemes
 
 =head1 THANKS
 
-I would like to thank the helpful Perlmonk shigetsu who gave me some great advice
-and helped me get my first module posted.  L<http://perlmonks.org/?node_id=596998>
+I would like to thank the helpful Perlmonk shigetsu who gave me some great
+advice and helped me get my first module posted.
+L<http://perlmonks.org/?node_id=596998>
 
 I would also like to thank 
 Johan Vromans
@@ -1615,18 +1778,17 @@ not done very extensive testing of the v5 databases.
 I am not sure I am 'require module' the best way, but I don't want to 
 depend on modules that you don't need to use.  
 
-I am not very happy with the data structures used by Encrypt() and 
-Decrypt() for v5 databases, but I am not sure of a better way.  
-
-The v4 compatibility mode does not insert a fake record 0 where 
-normally the encrypted password is stored.
-
 The date validation for packing new dates is very poor.
 
 I have not gone through and standardized on how the module fails.  Some 
 things fail with croak, some return undef, some may even fail silently.  
-Nothing initializes a lasterr method or anything like that.  I need 
-to fix all that before it is a 1.0 candidate. 
+Nothing initializes a lasterr method or anything like that.  
+
+This module does not do anything special with the plaintext data.  It SHOULD 
+treat it somehow special so that it can't be found in RAM or in a swap file 
+anywhere.  I don't have a clue how to do this.
+
+I need to fix all this before it is a 1.0 candidate. 
 
 Please report any bugs or feature requests to
 C<bug-palm-keyring at rt.cpan.org>, or through the web interface at

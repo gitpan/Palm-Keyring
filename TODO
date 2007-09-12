@@ -2,8 +2,6 @@ Better error reporting.  Learn how the rest of the modules do it, then support t
 
 make example4 actually a gui keyring app
 
-better v4 compatible, need to fake $pdb->{records}->[0] somehow
-
 accessors for reading and changing the options
 
 validate dates passed into the lastchange field.
@@ -11,4 +9,4 @@ validate dates passed into the lastchange field.
 should I generate a new date ONLY if the password changes
 or if anything changes?
 
-$RedRiver: TODO,v 1.12 2007/02/23 03:32:38 andrew Exp $
+$RedRiver: TODO,v 1.13 2007/09/12 02:44:36 andrew Exp $
