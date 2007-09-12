@@ -83,7 +83,7 @@ my %LABELS = (
 );
 
 
-our $VERSION = '0.96_02';
+our $VERSION = '0.96_03';
 
 sub new 
 {

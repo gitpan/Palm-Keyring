@@ -1,5 +1,5 @@
 #!/usr/bin/perl
-# $RedRiver: example3.pl,v 1.6 2007/09/12 03:59:37 andrew Exp $
+# $RedRiver: example3.pl,v 1.4 2007/02/10 16:24:16 andrew Exp $
 ########################################################################
 # palmkeyring.pl *** a command line client for Keyring databases.
 #
@@ -57,9 +57,11 @@ exit;
 sub show_list
 {
 	print "Showing List\n";
-	foreach my $r (@{ $pdb->{records} }) {
+	foreach (0..$#{ $pdb->{'records'} }) {
+        next if $_ == 0;
+        my $r = $pdb->{'records'}->[$_];
 		my $category = 
-			$pdb->{appinfo}->{categories}->[ $r->{category} ]->{name};
+			$pdb->{'appinfo'}->{'categories'}->[ $r->{'category'} ]->{'name'};
 
 		my $matched = 0;
 		foreach my $cat (@{ $Categories }) {
@@ -71,9 +73,9 @@ sub show_list
 		next if ( @{ $Categories } || @{ $Names } ) && not $matched;
 
 		# XXX Fix up formatting
-		print $r->{plaintext}->{0}->{data} .
+		print $r->{'name'} .
 			":" .
-			$r->{category} . 
+			$r->{'category'} . 
 			":" .
 			$category .
 			"\n";
@@ -106,18 +108,18 @@ sub show_items
 			$matched++ if uc($category) eq uc($cat);
 		}
 		foreach my $name (@{ $Names}) {
-			$matched++ if uc($r->{plaintext}->{0}->{data}) eq uc($name);
+			$matched++ if uc($r->{'name'}) eq uc($name);
 		}
 		next if ( @{ $Categories } || @{ $Names } ) && not $matched;
 
         my $a = $pdb->Decrypt($r);
 
 		# XXX Fix up formatting
-		print $a->{0}->{data} .  "\n\t" .
+		print $r->{'name'} .  "\n\t" .
 			"Category: " . $category .  "\n\t" .
-			"Account:  " . $a->{1}->{data} .  "\n\t" .
-			"Password: " . $a->{2}->{data} .  "\n";
-			print "\tNotes: " . $a->{255}->{data} . "\n" if $a->{255}->{data};
+			"Account:  " . $a->{'account'} .  "\n\t" .
+			"Password: " . $a->{'password'} .  "\n";
+			print "\tNotes: " . $a->{'notes'} . "\n" if $a->{'notes'};
 	}
 
 }
