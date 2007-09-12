@@ -1,5 +1,5 @@
 #!/usr/bin/perl
-# $RedRiver: example3.pl,v 1.5 2007/08/10 04:13:31 andrew Exp $
+# $RedRiver: example3.pl,v 1.6 2007/09/12 03:59:37 andrew Exp $
 ########################################################################
 # palmkeyring.pl *** a command line client for Keyring databases.
 #
