@@ -1,5 +1,5 @@
 #!/usr/bin/perl -T
-# $RedRiver: keyring5.t,v 1.8 2007/09/12 02:44:36 andrew Exp $
+# $RedRiver: keyring5.t,v 1.9 2007/09/13 15:44:39 andrew Exp $
 use strict;
 use warnings;
 
@@ -110,15 +110,16 @@ foreach my $cipher (0..3) {
     }
     ];
 
+    my $Num_Tests_Left = 34;
     SKIP: {
         if ($cipher > 0) {
-            skip 'Crypt::CBC not installed', 34 unless 
-                eval "require Crypt::CBC";
-            skip 'Crypt::' . $crypt->{name} . ' not installed', 34 unless 
-                eval "require Crypt::$crypt->{name}";
+            skip 'Crypt::CBC not installed', $Num_Tests_Left
+                unless eval "require Crypt::CBC";
+            skip 'Crypt::' . $crypt->{name} . ' not installed', $Num_Tests_Left
+                unless eval "require Crypt::$crypt->{name}";
         }
-        skip 'Digest::HMAC_SHA1 not installed', 34 unless 
-            eval " require Digest::HMAC_SHA1 ";
+        skip 'Digest::HMAC_SHA1 not installed', $Num_Tests_Left
+            unless eval "require Digest::HMAC_SHA1";
 
         ok( $pdb = new Palm::Keyring($options), 'New Palm::Keyring v' 
             . $options->{version} 

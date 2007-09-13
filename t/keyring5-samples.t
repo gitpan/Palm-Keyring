@@ -1,5 +1,5 @@
 #!/usr/bin/perl -T
-# $RedRiver: keyring5-samples.t,v 1.5 2007/08/10 04:13:31 andrew Exp $
+# $RedRiver: keyring5-samples.t,v 1.6 2007/09/13 15:44:39 andrew Exp $
 use strict;
 use warnings;
 
@@ -100,16 +100,17 @@ foreach my $file ('Keys-None.pdb', 'Keys-3DES.pdb', 'Keys-AES.pdb', 'Keys-AES256
     my $pdb;
     ok( $pdb = new Palm::PDB, 'new Palm::PDB' );
     ok( $pdb->Load('t/' . $file), "Loading '$file'" );
+    my $Num_Tests_Left = 5;
     SKIP: {
-        skip 'Digest::HMAC_SHA1 not installed', 5 unless 
-            eval " require Digest::HMAC_SHA1 ";
+        skip 'Digest::HMAC_SHA1 not installed', $Num_Tests_Left
+            unless eval "require Digest::HMAC_SHA1";
 
         if ($pdb->{appinfo}->{cipher} > 0) {
             my $crypt = Palm::Keyring::crypts($pdb->{appinfo}->{cipher});
-            skip 'Crypt::CBC not installed', 5 unless 
-                eval "require Crypt::CBC";
-            skip 'Crypt::' . $crypt->{name} . ' not installed', 5 unless 
-                eval "require Crypt::$crypt->{name}";
+            skip 'Crypt::CBC not installed', $Num_Tests_Left
+                unless eval "require Crypt::CBC";
+            skip 'Crypt::' . $crypt->{name} . ' not installed', $Num_Tests_Left
+                unless eval "require Crypt::$crypt->{name}";
         }
 
         $password = 'abc';

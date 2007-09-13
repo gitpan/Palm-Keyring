@@ -1,5 +1,5 @@
 #!/usr/bin/perl -T
-# $RedRiver: keyring.t,v 1.16 2007/09/13 00:02:52 andrew Exp $
+# $RedRiver: keyring.t,v 1.17 2007/09/13 15:41:36 andrew Exp $
 use strict;
 use warnings;
 
@@ -69,23 +69,24 @@ foreach my $options (@o) {
         },
     };
 
+    my $Num_Tests_Left = 25;
     SKIP: {
         if (defined $options->{cipher} && $options->{cipher} > 0) {
             my $crypt = Palm::Keyring::crypts($options->{cipher});
-            skip 'Crypt::CBC not installed', 25 unless 
-                eval "require Crypt::CBC";
-            skip 'Crypt::' . $crypt->{name} . ' not installed', 25 unless 
-                eval "require Crypt::$crypt->{name}";
+            skip 'Crypt::CBC not installed', $Num_Tests_Left 
+                unless eval "require Crypt::CBC";
+            skip 'Crypt::' . $crypt->{name} . ' not installed', $Num_Tests_Left 
+                unless eval "require Crypt::$crypt->{name}";
         }
 
         if ($options->{version} == 4) {
-            skip 'Crypt::DES not installed', 21 unless 
-                eval " require Crypt::DES ";
-            skip 'Digest::MD5 not installed', 21 unless 
-                eval " require Digest::MD5 ";
+            skip 'Crypt::DES not installed', $Num_Tests_Left
+                unless eval "require Crypt::DES ";
+            skip 'Digest::MD5 not installed', $Num_Tests_Left 
+                unless eval "require Digest::MD5 ";
         } elsif ($options->{version} == 5) {
-            skip 'Digest::HMAC_SHA1 not installed', 21 unless 
-                eval " require Digest::HMAC_SHA1 ";
+            skip 'Digest::HMAC_SHA1 not installed', $Num_Tests_Left
+                unless eval "require Digest::HMAC_SHA1 ";
         }
 
         ok( $pdb = new Palm::Keyring($options), 
