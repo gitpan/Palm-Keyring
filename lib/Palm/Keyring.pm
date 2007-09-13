@@ -1,5 +1,5 @@
 package Palm::Keyring;
-# $RedRiver: Keyring.pm,v 1.49 2007/09/12 03:39:22 andrew Exp $
+# $RedRiver: Keyring.pm,v 1.50 2007/09/13 00:02:52 andrew Exp $
 ########################################################################
 # Keyring.pm *** Perl class for Keyring for Palm OS databases.
 #
@@ -83,7 +83,7 @@ my %LABELS = (
 );
 
 
-our $VERSION = '0.96_03';
+our $VERSION = '0.96_04';
 
 sub new 
 {

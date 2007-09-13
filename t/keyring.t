@@ -1,5 +1,5 @@
 #!/usr/bin/perl -T
-# $RedRiver: keyring.t,v 1.15 2007/09/12 02:44:36 andrew Exp $
+# $RedRiver: keyring.t,v 1.16 2007/09/13 00:02:52 andrew Exp $
 use strict;
 use warnings;
 
@@ -72,9 +72,9 @@ foreach my $options (@o) {
     SKIP: {
         if (defined $options->{cipher} && $options->{cipher} > 0) {
             my $crypt = Palm::Keyring::crypts($options->{cipher});
-            skip 'Crypt::CBC not installed', 21 unless 
+            skip 'Crypt::CBC not installed', 25 unless 
                 eval "require Crypt::CBC";
-            skip 'Crypt::' . $crypt->{name} . ' not installed', 21 unless 
+            skip 'Crypt::' . $crypt->{name} . ' not installed', 25 unless 
                 eval "require Crypt::$crypt->{name}";
         }
 
