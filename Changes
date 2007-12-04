@@ -1,3 +1,14 @@
+0.96_06	Fix a weird bug where real life differs from the docs.  There is 
+	an FF FF between records in a real Keyring generated file that I was 
+	not inserting.  It is number 30549 on rt.cpan.org.
+
+	I also did some cleanup of some other stuff.  Like not encrypting 
+	and storing a second time fields with a label_id.of 0.
+
+0.96_0[1..5]	Different builds to get it to pass on as many of the CPAN 
+	automated testing platforms as I can.  Mostly just screwups with YAML 
+	cruft being left in the .t files.
+
 0.96	Switch to using a record format that is more like what is used
 	in Keyring v5.  Fake v4 databases so that the programmer doesn't 
 	have to know.
@@ -10,4 +21,4 @@
 0.93    Initial public release.  I have had a lot of help getting my first
         module release, please see the THANKS section of the documentation.
 
-$RedRiver: Changes,v 1.4 2007/08/10 04:22:41 andrew Exp $
+$RedRiver: Changes,v 1.5 2007/12/04 03:33:34 andrew Exp $

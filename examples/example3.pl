@@ -1,5 +1,5 @@
 #!/usr/bin/perl
-# $RedRiver: example3.pl,v 1.6 2007/09/12 03:59:37 andrew Exp $
+# $RedRiver: example3.pl,v 1.7 2007/12/04 03:37:48 andrew Exp $
 ########################################################################
 # palmkeyring.pl *** a command line client for Keyring databases.
 #
@@ -95,7 +95,6 @@ sub show_items
 	get_password() || die "Couldn't decrypt file!";
 
 	foreach (0..$#{ $pdb->{'records'} }) {
-        next if $_ == 0;
         my $r = $pdb->{'records'}->[$_];
 
 		my $category = 
