@@ -1,5 +1,5 @@
 #!/usr/bin/perl
-# $RedRiver: Build.PL,v 1.8 2007/08/10 04:22:41 andrew Exp $
+# $RedRiver: Build.PL,v 1.9 2007/12/05 05:42:29 andrew Exp $
 ########################################################################
 # Build.PL *** the Build.pl for Palm::Keyring
 # 
@@ -7,6 +7,8 @@
 ########################################################################
 use strict;
 use warnings;
+
+require 5.006_001;
 
 use Module::Build;
 my $build = Module::Build->new

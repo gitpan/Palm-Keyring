@@ -1,5 +1,5 @@
 package Palm::Keyring;
-# $RedRiver: Keyring.pm,v 1.53 2007/12/04 03:34:17 andrew Exp $
+# $RedRiver: Keyring.pm,v 1.54 2007/12/05 05:42:29 andrew Exp $
 ########################################################################
 # Keyring.pm *** Perl class for Keyring for Palm OS databases.
 #
@@ -14,6 +14,8 @@ package Palm::Keyring;
 ########################################################################
 use strict;
 use warnings;
+
+require 5.006_001;
 
 use Carp;
 
@@ -83,7 +85,7 @@ my %LABELS = (
 );
 
 
-our $VERSION = '0.96_06';
+our $VERSION = '0.96_07';
 
 sub new 
 {
@@ -634,7 +636,7 @@ sub _encrypt_v5
         next if $new->{$k}->{label_id} == 0;
         $plaintext .= _pack_field($new->{$k});
     }
-	$plaintext .= chr(0xff) x 2;
+    $plaintext .= chr(0xff) x 2;
 
     my $encrypted;
     if ($c->{name} eq 'None') {
